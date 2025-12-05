@@ -1,155 +1,126 @@
 #include <iostream>
-#include <string>
 #include <vector>
+#include <queue>
+#include <string>
+#include <cstring>
 
 using namespace std;
 
-// 1. Trie Node Structure
-struct TrieNode {
-    TrieNode* children[26]; // Array for 'a' through 'z'
-    bool isEndOfWord;
-    int value; // The data associated with the string
+// Maximum total characters in all patterns combined
+const int MAXN = 100005; 
+const int ALPHABET = 26;
 
-    // Constructor to Initialize Node
-    TrieNode() {
-        isEndOfWord = false;
-        value = -1; // Default "empty" value
-        for (int i = 0; i < 26; i++) {
-            children[i] = nullptr;
+struct AhoCorasick {
+    // trie[u][c] stores the next node index. 
+    // If edge exists, it points to child. If not, it points to failure state (DFA optimization).
+    int trie[MAXN][ALPHABET];
+    
+    // fail[u] is the suffix link
+    int fail[MAXN];
+    
+    // count[u] stores how many patterns end exactly at node u
+    int end_count[MAXN];
+    
+    int sz; // Node count
+
+    void init() {
+        memset(trie, 0, sizeof(trie));
+        memset(fail, 0, sizeof(fail));
+        memset(end_count, 0, sizeof(end_count));
+        sz = 1; // Start with root at index 0 (or 1 depending on preference, here 0 is root)
+    }
+
+    // 1. Insert patterns into the Trie
+    void insert(const string& s) {
+        int u = 0;
+        for (char c : s) {
+            int next_char = c - 'a';
+            if (!trie[u][next_char]) {
+                trie[u][next_char] = sz++;
+            }
+            u = trie[u][next_char];
         }
+        end_count[u]++;
+    }
+
+    // 2. Build Failure Links (BFS) and Optimize Transitions
+    void build() {
+        queue<int> q;
+        
+        // Push children of root (depth 1) to queue
+        // Their failure link is 0 (root)
+        for (int i = 0; i < ALPHABET; i++) {
+            if (trie[0][i]) {
+                q.push(trie[0][i]);
+            }
+        }
+
+        while (!q.empty()) {
+            int u = q.front();
+            q.pop();
+
+            for (int i = 0; i < ALPHABET; i++) {
+                if (trie[u][i]) {
+                    // Case 1: Real edge exists
+                    // The fail link of the child is: 
+                    // jump to u's fail node and take character 'i'
+                    fail[trie[u][i]] = trie[fail[u]][i];
+                    
+                    // Merge info: If the fail node is an end of a word, 
+                    // the current node effectively contains that word as a suffix.
+                    // (Optional: depends on problem. Here we merge counts).
+                    end_count[trie[u][i]] += end_count[fail[trie[u][i]]];
+                    
+                    q.push(trie[u][i]);
+                } else {
+                    // Case 2: No real edge (Optimization)
+                    // Point this missing edge to the destination of the fail node
+                    // This creates the "Automaton" structure (O(1) transition)
+                    trie[u][i] = trie[fail[u]][i];
+                }
+            }
+        }
+    }
+
+    // 3. Query Text
+    int query(const string& text) {
+        int u = 0;
+        int total_matches = 0;
+        
+        for (char c : text) {
+            int next_char = c - 'a';
+            // Because of our optimization in build(), we just move!
+            // No while loops to traverse failure links needed here.
+            u = trie[u][next_char];
+            
+            total_matches += end_count[u];
+        }
+        return total_matches;
     }
 };
 
-class Trie {
-private:
-    TrieNode* root;
-
-    // Helper for Deletion (Recursive)
-    // Returns true if the current node can be deleted (has no children and not a word)
-    bool _delete(TrieNode* current, string word, int depth) {
-        if (!current) return false;
-
-        // Base Case: If we have reached the end of the word
-        if (depth == word.length()) {
-            if (!current->isEndOfWord) return false; // Word doesn't exist
-
-            // Unmark this node as a word end
-            current->isEndOfWord = false;
-            current->value = -1; // Reset value
-
-            // If node has no other children, it is safe to delete it
-            return isEmpty(current);
-        }
-
-        // Recursive Step: Go deeper
-        int index = word[depth] - 'a';
-        if (_delete(current->children[index], word, depth + 1)) {
-            // If the child returned true, delete the child pointer
-            delete current->children[index];
-            current->children[index] = nullptr;
-
-            // Check if current node is essentially empty (no children, not a word)
-            // If so, return true to let the parent delete this node
-            return !current->isEndOfWord && isEmpty(current);
-        }
-
-        return false;
-    }
-
-    // Helper to check if a node has any children
-    bool isEmpty(TrieNode* node) {
-        for (int i = 0; i < 26; i++) {
-            if (node->children[i]) return false;
-        }
-        return true;
-    }
-
-public:
-    // E. Initiate (Constructor)
-    Trie() {
-        root = new TrieNode();
-    }
-
-    // C. Insert
-    void insert(string word, int val) {
-        TrieNode* node = root;
-        for (char c : word) {
-            int index = c - 'a';
-            if (!node->children[index]) {
-                node->children[index] = new TrieNode();
-            }
-            node = node->children[index];
-        }
-        node->isEndOfWord = true;
-        node->value = val;
-        cout << "Inserted: " << word << " [" << val << "]" << endl;
-    }
-
-    // A. Update
-    void update(string word, int newVal) {
-        TrieNode* node = root;
-        for (char c : word) {
-            int index = c - 'a';
-            if (!node->children[index]) {
-                cout << "Error: Word '" << word << "' not found. Cannot update." << endl;
-                return;
-            }
-            node = node->children[index];
-        }
-        if (node->isEndOfWord) {
-            node->value = newVal;
-            cout << "Updated: " << word << " to [" << newVal << "]" << endl;
-        } else {
-            cout << "Error: '" << word << "' is a prefix, not a complete word." << endl;
-        }
-    }
-
-    // D. Get
-    int get(string word) {
-        TrieNode* node = root;
-        for (char c : word) {
-            int index = c - 'a';
-            if (!node->children[index]) return -1; // Not found
-            node = node->children[index];
-        }
-        if (node->isEndOfWord) {
-            return node->value;
-        }
-        return -1; // Word exists as prefix but not a marked word
-    }
-
-    // B. Deletion
-    void remove(string word) {
-        if (_delete(root, word, 0)) {
-            cout << "Deleted: " << word << endl;
-        } else {
-            // Note: _delete might succeed internally but return false if the root itself wasn't deleted
-            // so we just print a confirmation for clarity here.
-            cout << "Delete operation called on: " << word << endl;
-        }
-    }
-};
-
-// Main Driver
 int main() {
-    // E. Initiate
-    Trie myTrie;
+    AhoCorasick ac;
+    ac.init();
 
-    // C. Insert
-    myTrie.insert("apple", 100);
-    myTrie.insert("app", 50);
+    // Patterns
+    ac.insert("he");
+    ac.insert("she");
+    ac.insert("his");
+    ac.insert("hers");
 
-    // D. Get
-    cout << "Get 'apple': " << myTrie.get("apple") << endl;
+    // Build the automaton
+    ac.build();
 
-    // A. Update
-    myTrie.update("apple", 200);
-    cout << "Get 'apple' after update: " << myTrie.get("apple") << endl;
-
-    // B. Deletion
-    myTrie.remove("apple");
-    cout << "Get 'apple' after delete: " << myTrie.get("apple") << endl; // Should be -1
-    cout << "Get 'app' after deleting apple: " << myTrie.get("app") << endl; // Should still be 50
+    string text = "ahishers";
+    cout << "Text: " << text << endl;
+    
+    // Search
+    // Matches: "his" (at index 1..3), "he" (at index 4..5), "hers" (at index 4..7)
+    // Note: "he" is a suffix of "she" (not in text) but also a prefix of "hers".
+    // "hers" contains "he".
+    
+    cout << "Total occurrences found: " << ac.query(text) << endl;
 
     return 0;
 }
